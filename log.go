@@ -25,6 +25,9 @@ const (
 
 var logLevel = LevelDebug
 
+// defaultLevel is the level used for messages sent to the Write function
+var defaultLevel = LevelDebug
+
 func init() {
 	logger = log.New(os.Stdout, "", log.LUTC)
 }
@@ -37,6 +40,20 @@ func SetLogLevel(level int) {
 		return
 	}
 	logLevel = level
+}
+
+// SetDefaultLevel set the log level for the log messages written to the Write
+// function. This is useful for integrating packages which use Go's native
+// logger interface into this log package.
+//
+// An example of this is the very verbose http logger which tends to spam logs
+// with messages which can otherwise not be silenced.
+func SetDefaultLevel(level int) {
+	if level < LevelNone || level > LevelDebug {
+		Error("Invalid log level %v", level)
+		return
+	}
+	defaultLevel = level
 }
 
 // Debug logs a debugging message
@@ -70,6 +87,30 @@ func Error(msgFmt string, v ...interface{}) {
 	}
 	print("ERR", msgFmt, v...)
 	debug.PrintStack()
+}
+
+// haha, typewriter
+type writer int
+
+// Writer implements the io.Writer interface so it can be used as a log writer
+// in go's standard log.Logger
+var Writer writer
+
+// Write can be used as a logging destination in the log.Logger interface. It
+// logs a message to the default logging level, this level can be set with the
+// SetDefaultLevel function
+func (writer) Write(p []byte) (n int, err error) {
+	switch defaultLevel {
+	case LevelDebug:
+		Debug(string(p))
+	case LevelInfo:
+		Info(string(p))
+	case LevelWarning:
+		Warn(string(p))
+	case LevelError:
+		Error(string(p))
+	}
+	return len(p), nil
 }
 
 func print(lvl string, msgFmt string, v ...interface{}) {
