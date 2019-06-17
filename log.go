@@ -16,11 +16,30 @@ var logger *log.Logger
 
 // Log level, higher number is more verbosity
 const (
-	LevelDebug   = 4
-	LevelInfo    = 3
+	// LevelTrace is used for printing verbose network communications
+	LevelTrace = 5
+
+	// LevelDebug is used for printing the results of actions which are
+	// essential to the succeeding of the program, but not important enough to
+	// show up in the logs of every server which runs this program
+	LevelDebug = 4
+
+	// LevelInfo is used for printing messages which are useful to for knowing
+	// the current state of the application. These messages should not show up
+	// too often, and they should be useful for system administrators to see
+	LevelInfo = 3
+
+	// LevelWarning is used for notifying the administrator that something is
+	// wrong, but the application can still function properly
 	LevelWarning = 2
-	LevelError   = 1
-	LevelNone    = 0
+
+	// LevelError is used to indicate that something important broke and the
+	// application is now in an inconsistent state. The problem should be fixed
+	// before restarting the application
+	LevelError = 1
+
+	// LevelNone makes the application log no messages at all
+	LevelNone = 0
 )
 
 var logLevel = LevelDebug
@@ -28,14 +47,18 @@ var logLevel = LevelDebug
 // defaultLevel is the level used for messages sent to the Write function
 var defaultLevel = LevelDebug
 
+// Colours controls if the log package should print ANSI colour codes depending
+// on the log level of the logged message. Defaults to false
+var Colours = false
+
 func init() {
 	logger = log.New(os.Stdout, "", log.LUTC)
 }
 
-// SetLogLevel set the logging verbosity. 0 is lowest (log nothing at all), 4 is
-// highest (log all debug messages)
+// SetLogLevel set the logging verbosity. 0 is lowest (log nothing at all), 5 is
+// highest (log all debug and trace messages)
 func SetLogLevel(level int) {
-	if level < LevelNone || level > LevelDebug {
+	if level < LevelNone || level > LevelTrace {
 		Error("Invalid log level %v", level)
 		return
 	}
@@ -56,12 +79,20 @@ func SetDefaultLevel(level int) {
 	defaultLevel = level
 }
 
+// Trace logs a tracing message
+func Trace(msgFmt string, v ...interface{}) {
+	if logLevel < LevelTrace {
+		return
+	}
+	print("95", "TRC", msgFmt, v...)
+}
+
 // Debug logs a debugging message
 func Debug(msgFmt string, v ...interface{}) {
 	if logLevel < LevelDebug {
 		return
 	}
-	print("DBG", msgFmt, v...)
+	print("96", "DBG", msgFmt, v...)
 }
 
 // Info logs an informative message
@@ -69,7 +100,7 @@ func Info(msgFmt string, v ...interface{}) {
 	if logLevel < LevelInfo {
 		return
 	}
-	print("INF", msgFmt, v...)
+	print("92", "INF", msgFmt, v...)
 }
 
 // Warn logs a warning message
@@ -77,7 +108,7 @@ func Warn(msgFmt string, v ...interface{}) {
 	if logLevel < LevelWarning {
 		return
 	}
-	print("WRN", msgFmt, v...)
+	print("93", "WRN", msgFmt, v...)
 }
 
 // Error logs an error message, and prints an execution stack afterwards
@@ -85,16 +116,11 @@ func Error(msgFmt string, v ...interface{}) {
 	if logLevel < LevelError {
 		return
 	}
-	print("ERR", msgFmt, v...)
+	print("91", "ERR", msgFmt, v...)
 	debug.PrintStack()
 }
 
-// haha, typewriter
 type writer int
-
-// Writer implements the io.Writer interface so it can be used as a log writer
-// in go's standard log.Logger
-var Writer writer
 
 // Write can be used as a logging destination in the log.Logger interface. It
 // logs a message to the default logging level, this level can be set with the
@@ -113,15 +139,37 @@ func (writer) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func print(lvl string, msgFmt string, v ...interface{}) {
+// Logger is an instance of the standard Go log.Logger which can be used by Go
+// packages to log to the Default log level
+var Logger = log.New(writer(0), "", 0)
+
+func print(colour string, lvl string, msgFmt string, v ...interface{}) {
+	// Get the file name and line number
 	_, fn, line, _ := runtime.Caller(2)
+
+	// Maximum length of the file path which is printed
 	var cutoff = 30
 	if len(fn) < cutoff {
 		cutoff = len(fn)
 	}
 
-	msg := fmt.Sprintf("[%s] %30s:%-3d %s", lvl, "…"+string(fn[len(fn)-cutoff:]), line, msgFmt)
+	// If colour codes are enabled we add some ANSI magic to the mix
+	if Colours {
+		lvl = "\x1b[1m\x1b[" + colour + "m" + lvl + "\x1b[0m"
+	}
 
+	// Format the message to print. First the log level, then the source file
+	// name, line number and the message
+	msg := fmt.Sprintf(
+		"[%s] %30s:%-3d %s",
+		lvl,
+		"…"+string(fn[len(fn)-cutoff:]),
+		line,
+		msgFmt,
+	)
+
+	// If variadic arguments were passed we parse them with Printf, else we just
+	// print the message normally
 	if len(v) == 0 {
 		logger.Println(msg)
 	} else {
